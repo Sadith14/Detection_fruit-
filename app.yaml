@@ -5,8 +5,8 @@ env:
   - name: GRADIO_SERVER_NAME
     value: "0.0.0.0"
   - name: MODEL_VOLUME
-    valueFrom: model-volume
+    value: /Volumes/workspace/default/modelos
   - name: NEW_DATA_VOLUME
-    valueFrom: new-data-volume
+    value: /Volumes/workspace/default/datos_nuevos
   - name: GITHUB_TOKEN
     valueFrom: github-token

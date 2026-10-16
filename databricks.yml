@@ -34,9 +34,9 @@ resources:
           - name: GRADIO_SERVER_NAME
             value: "0.0.0.0"
           - name: MODEL_VOLUME
-            value_from: model-volume
+            value: /Volumes/workspace/default/modelos
           - name: NEW_DATA_VOLUME
-            value_from: new-data-volume
+            value: /Volumes/workspace/default/datos_nuevos
           - name: GITHUB_TOKEN
             value_from: github-token
           - name: GITHUB_REPOSITORY
