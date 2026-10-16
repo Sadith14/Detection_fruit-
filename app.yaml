@@ -1,0 +1,12 @@
+command:
+  - python
+  - app.py
+env:
+  - name: GRADIO_SERVER_NAME
+    value: "0.0.0.0"
+  - name: MODEL_VOLUME
+    valueFrom: model-volume
+  - name: NEW_DATA_VOLUME
+    valueFrom: new-data-volume
+  - name: GITHUB_TOKEN
+    valueFrom: github-token

@@ -1,0 +1,58 @@
+bundle:
+  name: app-frutas
+  sync:
+    exclude:
+      - models/*.pt
+
+variables:
+  github_repository:
+    description: Repositorio que recibirá repository_dispatch, formato propietario/repositorio
+  app_secret_scope:
+    description: Scope de Databricks que contiene el token de GitHub de la app
+  app_github_token_secret_key:
+    description: Clave del secreto del token de GitHub en el scope anterior
+
+targets:
+  prod:
+    mode: production
+    default: true
+    workspace:
+      root_path: ~/.bundle/${bundle.name}/${bundle.target}
+
+resources:
+  apps:
+    clasificador_frutas:
+      name: clasificador-frutas
+      description: Clasificador de frutas con ciclo de reentrenamiento supervisado
+      source_code_path: .
+      config:
+        command:
+          - python
+          - app.py
+        env:
+          - name: GRADIO_SERVER_NAME
+            value: "0.0.0.0"
+          - name: MODEL_VOLUME
+            value_from: model-volume
+          - name: NEW_DATA_VOLUME
+            value_from: new-data-volume
+          - name: GITHUB_TOKEN
+            value_from: github-token
+          - name: GITHUB_REPOSITORY
+            value: ${var.github_repository}
+      resources:
+        - name: model-volume
+          uc_securable:
+            securable_type: VOLUME
+            securable_full_name: workspace.default.modelos
+            permission: READ_VOLUME
+        - name: new-data-volume
+          uc_securable:
+            securable_type: VOLUME
+            securable_full_name: workspace.default.datos_nuevos
+            permission: WRITE_VOLUME
+        - name: github-token
+          secret:
+            scope: ${var.app_secret_scope}
+            key: ${var.app_github_token_secret_key}
+            permission: READ

@@ -1,0 +1,4 @@
+Copia aqui los pesos desde Drive (PTOYECTO1_VISION/models/):
+  effnet_b0_tl.pt   (obligatorio, 17.7 MB)
+  cnn_scratch.pt    (opcional, 4.9 MB)
+  vit_b16.pt        (opcional, 343 MB - no lo subas a Hugging Face)

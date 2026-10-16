@@ -1,0 +1,60 @@
+name: Desplegar app Databricks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: databricks-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código y pesos LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Instalar Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Publicar el primer modelo si el Volume está vacío
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          MODEL_VOLUME: dbfs:/Volumes/workspace/default/modelos
+        run: |
+          set -euo pipefail
+          if ! databricks fs ls "$MODEL_VOLUME" | grep -Fq "actual.pt"; then
+            databricks fs cp models/effnet_b0_tl.pt "$MODEL_VOLUME/actual.pt"
+          fi
+
+      - name: Desplegar y ejecutar la app
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DATABRICKS_APP_SECRET_SCOPE: ${{ vars.DATABRICKS_APP_SECRET_SCOPE }}
+          DATABRICKS_APP_GITHUB_TOKEN_KEY: ${{ vars.DATABRICKS_APP_GITHUB_TOKEN_KEY }}
+        run: |
+          set -euo pipefail
+          : "${DATABRICKS_APP_SECRET_SCOPE:?Configura DATABRICKS_APP_SECRET_SCOPE en las variables del repositorio}"
+          : "${DATABRICKS_APP_GITHUB_TOKEN_KEY:?Configura DATABRICKS_APP_GITHUB_TOKEN_KEY en las variables del repositorio}"
+          databricks bundle validate --target prod \
+            --var="github_repository=$GITHUB_REPOSITORY" \
+            --var="app_secret_scope=$DATABRICKS_APP_SECRET_SCOPE" \
+            --var="app_github_token_secret_key=$DATABRICKS_APP_GITHUB_TOKEN_KEY"
+          databricks bundle deploy --target prod \
+            --var="github_repository=$GITHUB_REPOSITORY" \
+            --var="app_secret_scope=$DATABRICKS_APP_SECRET_SCOPE" \
+            --var="app_github_token_secret_key=$DATABRICKS_APP_GITHUB_TOKEN_KEY"
+          databricks bundle run clasificador_frutas --target prod \
+            --var="github_repository=$GITHUB_REPOSITORY" \
+            --var="app_secret_scope=$DATABRICKS_APP_SECRET_SCOPE" \
+            --var="app_github_token_secret_key=$DATABRICKS_APP_GITHUB_TOKEN_KEY"

@@ -1,0 +1,150 @@
+name: Reentrenar clasificador
+
+on:
+  repository_dispatch:
+    types: [datos-nuevos]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: databricks-prod
+  cancel-in-progress: false
+
+jobs:
+  train-evaluate-promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código y pesos LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Instalar dependencias CPU
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          python -m pip install -r requirements.txt
+
+      - name: Descargar datasets de Unity Catalog Volumes
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          ORIGINAL_DATA_VOLUME: ${{ vars.ORIGINAL_DATA_VOLUME }}
+          VALIDATION_DATA_VOLUME: ${{ vars.VALIDATION_DATA_VOLUME }}
+          NEW_DATA_VOLUME: dbfs:/Volumes/workspace/default/datos_nuevos
+        run: |
+          set -euo pipefail
+          : "${ORIGINAL_DATA_VOLUME:?Configura ORIGINAL_DATA_VOLUME en las variables del repositorio}"
+          : "${VALIDATION_DATA_VOLUME:?Configura VALIDATION_DATA_VOLUME en las variables del repositorio}"
+          ORIGINAL_ROOT="${ORIGINAL_DATA_VOLUME%/}"
+          VALIDATION_ROOT="${VALIDATION_DATA_VOLUME%/}"
+          NEW_ROOT="${NEW_DATA_VOLUME%/}"
+          path_overlaps() {
+            [[ "$1" == "$2" || "$1" == "$2/"* || "$2" == "$1/"* ]]
+          }
+          if path_overlaps "$ORIGINAL_ROOT" "$VALIDATION_ROOT" ||
+             path_overlaps "$ORIGINAL_ROOT" "$NEW_ROOT" ||
+             path_overlaps "$VALIDATION_ROOT" "$NEW_ROOT"; then
+            echo "Los directorios original, validación y datos nuevos deben ser independientes." >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/datasets"
+          databricks fs cp "$ORIGINAL_DATA_VOLUME" "$RUNNER_TEMP/datasets/original" --recursive
+          databricks fs cp "$VALIDATION_DATA_VOLUME" "$RUNNER_TEMP/datasets/validation" --recursive
+          new_data_listing="$(databricks fs ls "$NEW_DATA_VOLUME")"
+          if printf '%s\n' "$new_data_listing" | grep -Eq 'Fresh(Apple|Banana|Orange|Strawberry)|Rotten(Apple|Banana|Orange|Strawberry)'; then
+            databricks fs cp "$NEW_DATA_VOLUME" "$RUNNER_TEMP/datasets/new" --recursive
+          else
+            echo "No hay datos nuevos; se entrenará con el dataset original."
+            mkdir -p "$RUNNER_TEMP/datasets/new"
+          fi
+
+      - name: Preparar pesos actuales iniciales
+        run: |
+          if [ ! -f models/actual.pt ]; then
+            cp models/effnet_b0_tl.pt models/actual.pt
+          fi
+
+      - name: Entrenar candidato en CPU
+        run: |
+          python train.py \
+            --train-dir "$RUNNER_TEMP/datasets/original" \
+            --new-data-dir "$RUNNER_TEMP/datasets/new" \
+            --current-model models/actual.pt \
+            --candidate-output models/candidato.pt \
+            --seed 42
+
+      - name: Evaluar contra el conjunto fijo
+        run: |
+          python check_model.py \
+            --validation-dir "$RUNNER_TEMP/datasets/validation" \
+            --baseline models/actual.pt \
+            --candidate models/candidato.pt \
+            --metrics-output metricas.json
+
+      - name: Guardar métricas del ciclo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metricas-${{ github.run_id }}
+          path: metricas.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Preparar la promoción validada
+        run: cp models/candidato.pt models/actual.pt
+
+      - name: Publicar pesos activos en Unity Catalog Volume
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          databricks fs cp models/actual.pt dbfs:/Volumes/workspace/default/modelos/actual.pt --overwrite
+
+      - name: Desplegar y ejecutar la app
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DATABRICKS_APP_SECRET_SCOPE: ${{ vars.DATABRICKS_APP_SECRET_SCOPE }}
+          DATABRICKS_APP_GITHUB_TOKEN_KEY: ${{ vars.DATABRICKS_APP_GITHUB_TOKEN_KEY }}
+        run: |
+          set -euo pipefail
+          : "${DATABRICKS_APP_SECRET_SCOPE:?Configura DATABRICKS_APP_SECRET_SCOPE en las variables del repositorio}"
+          : "${DATABRICKS_APP_GITHUB_TOKEN_KEY:?Configura DATABRICKS_APP_GITHUB_TOKEN_KEY en las variables del repositorio}"
+          databricks bundle validate --target prod \
+            --var="github_repository=$GITHUB_REPOSITORY" \
+            --var="app_secret_scope=$DATABRICKS_APP_SECRET_SCOPE" \
+            --var="app_github_token_secret_key=$DATABRICKS_APP_GITHUB_TOKEN_KEY"
+          databricks bundle deploy --target prod \
+            --var="github_repository=$GITHUB_REPOSITORY" \
+            --var="app_secret_scope=$DATABRICKS_APP_SECRET_SCOPE" \
+            --var="app_github_token_secret_key=$DATABRICKS_APP_GITHUB_TOKEN_KEY"
+          databricks bundle run clasificador_frutas --target prod \
+            --var="github_repository=$GITHUB_REPOSITORY" \
+            --var="app_secret_scope=$DATABRICKS_APP_SECRET_SCOPE" \
+            --var="app_github_token_secret_key=$DATABRICKS_APP_GITHUB_TOKEN_KEY"
+
+      - name: Versionar el modelo promovido
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git lfs install
+          git add models/actual.pt
+          git commit -m "chore(model): promote validated classifier" \
+            -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          git push origin HEAD:main

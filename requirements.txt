@@ -1,0 +1,9 @@
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+torch
+torchvision
+timm
+gradio==6.30.0
+pillow
+numpy
+scikit-learn
