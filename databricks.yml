@@ -1,8 +1,9 @@
 bundle:
   name: app-frutas
-  sync:
-    exclude:
-      - models/*.pt
+
+sync:
+  exclude:
+    - models/*.pt
 
 variables:
   github_repository:
