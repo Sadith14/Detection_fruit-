@@ -93,6 +93,8 @@ class Clasificador:
         archivo, tipo = MODELOS[clave]
         ruta = _ruta_pesos(clave, archivo)
         if not ruta.exists():
+            descargar_archivo_volume(archivo)
+        if not ruta.exists():
             raise FileNotFoundError(f"No se encontraron los pesos del modelo: {ruta}")
         self.clave = clave
         self.modelo, (mean, std) = construir(tipo)
@@ -108,8 +110,8 @@ class Clasificador:
         return F.softmax(self.modelo(x).float(), dim=1)[0].numpy()
 
 
-def descargar_modelo_si_es_necesario():
-    target = MODELS_DIR / "actual.pt"
+def descargar_archivo_volume(archivo):
+    target = MODELS_DIR / archivo
     if target.exists() and target.stat().st_size > 0:
         return target
     volume = os.getenv("MODEL_VOLUME")
@@ -118,18 +120,25 @@ def descargar_modelo_si_es_necesario():
     try:
         from databricks.sdk import WorkspaceClient
         w = WorkspaceClient()
-        volume_path = f"{volume.rstrip('/')}/actual.pt"
-        print(f"Descargando modelo activo desde {volume_path}...")
+        volume_path = f"{volume.rstrip('/')}/{archivo}"
+        print(f"Descargando {archivo} desde {volume_path}...")
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         response = w.files.download(volume_path)
         content = response.contents.read()
         with open(target, "wb") as f:
             f.write(content)
-        print(f"Modelo descargado exitosamente: {target} ({target.stat().st_size} bytes)")
+        print(f"Archivo descargado exitosamente: {target} ({target.stat().st_size} bytes)")
         return target
     except Exception as exc:
-        print(f"Aviso: no se pudo descargar el modelo desde {volume} ({exc})")
+        print(f"Aviso: no se pudo descargar {archivo} desde {volume} ({exc})")
         return None
+
+
+def descargar_modelo_si_es_necesario():
+    # 1. Asegurar el modelo principal (actual.pt)
+    descargar_archivo_volume("actual.pt")
+    # 2. Descargar vit_b16.pt si está disponible en el Volume
+    descargar_archivo_volume("vit_b16.pt")
 
 
 def _ruta_pesos(clave, archivo):

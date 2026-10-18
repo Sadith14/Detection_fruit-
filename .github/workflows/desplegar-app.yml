@@ -34,6 +34,9 @@ jobs:
           if ! databricks fs ls "$MODEL_VOLUME" | grep -Fq "actual.pt"; then
             databricks fs cp models/effnet_b0_tl.pt "$MODEL_VOLUME/actual.pt"
           fi
+          if ! databricks fs ls "$MODEL_VOLUME" | grep -Fq "vit_b16.pt"; then
+            databricks fs cp models/vit_b16.pt "$MODEL_VOLUME/vit_b16.pt"
+          fi
 
       - name: Desplegar y ejecutar la app
         env:
