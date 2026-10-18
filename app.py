@@ -287,8 +287,11 @@ with gr.Blocks(title="Clasificador de frutas · fresca o podrida") as demo:
 demo.queue(max_size=20)
 
 if __name__ == "__main__":
+    port_env = os.environ.get("DATABRICKS_APP_PORT") or os.environ.get("PORT") or os.environ.get("GRADIO_SERVER_PORT")
+    port = int(port_env) if port_env else 7860
     demo.launch(
-        server_name=os.getenv("GRADIO_SERVER_NAME", "127.0.0.1"),
+        server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
+        server_port=port,
         theme=gr.themes.Soft(),
         share=bool(os.getenv("GRADIO_SHARE")),
         css=CUSTOM_CSS,

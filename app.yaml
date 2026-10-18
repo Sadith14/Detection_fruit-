@@ -10,3 +10,5 @@ env:
     value: /Volumes/workspace/default/datos_nuevos
   - name: GITHUB_TOKEN
     valueFrom: github-token
+  - name: GITHUB_REPOSITORY
+    value: "Sadith14/Detection_fruit-"

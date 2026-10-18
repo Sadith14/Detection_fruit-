@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 models/candidato.pt
 metricas.json
+actualizar_secreto.py
