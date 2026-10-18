@@ -108,11 +108,37 @@ class Clasificador:
         return F.softmax(self.modelo(x).float(), dim=1)[0].numpy()
 
 
+def descargar_modelo_si_es_necesario():
+    target = MODELS_DIR / "actual.pt"
+    if target.exists() and target.stat().st_size > 0:
+        return target
+    volume = os.getenv("MODEL_VOLUME")
+    if not volume:
+        return None
+    try:
+        from databricks.sdk import WorkspaceClient
+        w = WorkspaceClient()
+        volume_path = f"{volume.rstrip('/')}/actual.pt"
+        print(f"Descargando modelo activo desde {volume_path}...")
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        response = w.files.download(volume_path)
+        content = response.contents.read()
+        with open(target, "wb") as f:
+            f.write(content)
+        print(f"Modelo descargado exitosamente: {target} ({target.stat().st_size} bytes)")
+        return target
+    except Exception as exc:
+        print(f"Aviso: no se pudo descargar el modelo desde {volume} ({exc})")
+        return None
+
+
 def _ruta_pesos(clave, archivo):
     if clave == DEFECTO:
         volume = os.getenv("MODEL_VOLUME")
         if volume:
-            return Path(volume) / "actual.pt"
+            p = Path(volume) / "actual.pt"
+            if p.exists():
+                return p
         actual = MODELS_DIR / "actual.pt"
         if actual.exists():
             return actual
@@ -129,6 +155,7 @@ def obtener(clave):
 
 
 def disponibles():
+    descargar_modelo_si_es_necesario()
     return [
         clave for clave, (archivo, _) in MODELOS.items()
         if _ruta_pesos(clave, archivo).exists()

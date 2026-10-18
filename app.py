@@ -72,6 +72,21 @@ def guardar_aportes(files, clase):
             raise gr.Error(f"{source.name} no es una imagen válida: {exc}") from exc
         valid_files.append((extension, content))
 
+    volume_str = os.getenv("NEW_DATA_VOLUME", "")
+    if volume_str.startswith("/Volumes/"):
+        try:
+            from databricks.sdk import WorkspaceClient
+            w = WorkspaceClient()
+            saved_paths = []
+            for extension, content in valid_files:
+                name = f"{uuid.uuid4().hex}{extension}"
+                remote_path = f"{volume_str.rstrip('/')}/{clase}/{name}"
+                w.files.upload(remote_path, io.BytesIO(content), overwrite=True)
+                saved_paths.append(remote_path)
+            return f"Se guardaron {len(saved_paths)} imágenes en `{volume_str}/{clase}`."
+        except Exception as exc:
+            raise gr.Error(f"Error al guardar en el Volume con Databricks SDK: {exc}") from exc
+
     destination_dir = NEW_DATA_DIR / clase
     destination_dir.mkdir(parents=True, exist_ok=True)
     saved_paths = []

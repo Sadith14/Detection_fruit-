@@ -4,7 +4,10 @@ bundle:
 
 sync:
   exclude:
-    - models/*.pt
+    - models/vit_b16.pt
+    - models/effnet_b0_tl.pt
+    - models/actual.pt
+    - models/candidato.pt
 
 variables:
   github_repository:
